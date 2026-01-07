@@ -6,28 +6,56 @@ use App\Models\Client;
 use App\Models\ClientHeartbeat;
 use App\Models\ClientMetric;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
+/**
+ * API Client Controller
+ *
+ * Handles all API endpoints for client management, including:
+ * - Client registration and installation
+ * - Heartbeat processing and monitoring
+ * - Client metrics and status reporting
+ * - Client deletion
+ */
 class ClientController
 {
     public function install(Request $request)
     {
-        $validated = $request->validate(['name' => 'required|string|max:255|unique:clients,name']);
+        try {
+            $validated = $request->validate([
+                'name' => 'required|string|max:255|unique:clients,name|min:3',
+            ]);
 
-        $uuid = (string) Str::uuid();
-        $client = Client::create([
-            'name' => $validated['name'],
-            'uuid' => $uuid,
-            'is_online' => false,
-        ]);
+            $uuid = (string) Str::uuid();
+            $client = Client::create([
+                'name' => $validated['name'],
+                'uuid' => $uuid,
+                'is_online' => false,
+            ]);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Client registered successfully',
-            'uuid' => $uuid,
-            'heartbeat_interval' => 300,
-            'endpoint' => route('api.heartbeat'),
-        ], 201);
+            return response()->json([
+                'success' => true,
+                'message' => 'Client registered successfully',
+                'uuid' => $uuid,
+                'heartbeat_interval' => 300,
+                'endpoint' => route('api.heartbeat'),
+                'installer_url' => route('clients.installer', ['id' => $client->id]),
+            ], 201);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'error' => 'Validation error',
+                'message' => $e->getMessage(),
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Client installation error: ' . $e->getMessage());
+            return response()->json([
+                'error' => 'Internal server error',
+                'message' => 'Failed to register client'
+            ], 500);
+        }
     }
 
     public function heartbeat(Request $request)
@@ -37,35 +65,54 @@ class ClientController
             return response()->json(['error' => 'Missing authentication token'], 401);
         }
 
-        $client = Client::where('uuid', $token)->firstOrFail();
+        // Validate token format
+        if (!Str::isUuid($token)) {
+            return response()->json(['error' => 'Invalid token format'], 401);
+        }
 
-        $validated = $request->validate([
-            'ip_address' => 'required|ip',
-            'rtt_ms' => 'required|integer|min:0|max:60000',
-        ]);
+        try {
+            $client = Client::where('uuid', $token)->firstOrFail();
 
-        ClientHeartbeat::createFromHeartbeat($client->id, [
-            'ip_address' => $validated['ip_address'],
-            'rtt_ms' => $validated['rtt_ms'],
-        ]);
+            $validated = $request->validate([
+                'ip_address' => 'required|ip',
+                'rtt_ms' => 'required|integer|min:0|max:60000',
+            ]);
 
-        $client->update([
-            'public_ip' => $validated['ip_address'],
-            'is_online' => true,
-            'last_heartbeat' => now(),
-        ]);
+            ClientHeartbeat::createFromHeartbeat($client->id, [
+                'ip_address' => $validated['ip_address'],
+                'rtt_ms' => $validated['rtt_ms'],
+            ]);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Heartbeat received',
-            'timestamp' => now()->toIso8601String(),
-            'next_heartbeat_in' => 300,
-        ]);
+            $client->update([
+                'public_ip' => $validated['ip_address'],
+                'is_online' => true,
+                'last_heartbeat' => now(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Heartbeat received',
+                'timestamp' => now()->toIso8601String(),
+                'next_heartbeat_in' => 300,
+            ]);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['error' => 'Client not found'], 404);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'error' => 'Validation error',
+                'message' => $e->getMessage(),
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Heartbeat error: ' . $e->getMessage());
+            return response()->json(['error' => 'Internal server error'], 500);
+        }
     }
 
     public function listClients()
     {
-        $clients = Client::with(['heartbeats' => fn($q) => $q->recent()->limit(10)])
+        $clients = Client::with(['heartbeats' => fn($q) => $q->latest()->limit(10)])
             ->orderBy('last_heartbeat', 'desc')
             ->get();
 

@@ -11,9 +11,9 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
-    ->withMiddleware(function (Middleware $middleware): void {
-        //
-    })
+->withMiddleware(function (Middleware $middleware): void {
+    $middleware->appendToGroup('api', \App\Http\Middleware\ApiRateLimiter::class);
+})
     ->withExceptions(function (Exceptions $exceptions): void {
         //
     })->create();

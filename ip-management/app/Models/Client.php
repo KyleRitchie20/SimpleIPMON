@@ -2,11 +2,19 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/**
+ * Client Model
+ *
+ * Represents a monitored client in the IP Management System.
+ * Tracks client status, connectivity, and performance metrics.
+ */
 class Client extends Model
 {
+    use HasFactory;
     protected $fillable = ['name', 'uuid', 'public_ip', 'is_online', 'last_heartbeat'];
     protected $casts = ['is_online' => 'boolean', 'last_heartbeat' => 'datetime'];
 
