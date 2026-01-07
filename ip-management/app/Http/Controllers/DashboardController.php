@@ -12,8 +12,8 @@ class DashboardController
         $clients = Client::orderBy('last_heartbeat', 'desc')->get();
         $stats = [
             'total_clients' => $clients->count(),
-            'online_clients' => $clients->where('is_online', true)->count(),
-            'offline_clients' => $clients->where('is_online', false)->count(),
+            'online_clients' => $clients->where('status', 'ONLINE')->count(),
+            'offline_clients' => $clients->where('status', 'OFFLINE')->count(),
             'avg_rtt_all' => $clients->avg('average_rtt_1h'),
         ];
 
@@ -42,32 +42,81 @@ public function showClient($clientId)
                 'overall_uptime' => 0
             ];
         } else {
-            // REAL DATA - Group by hour:minute
-            $rttData = [];
-            $uptimeData = [];
-            $labels = [];
+        // NEW IMPROVED LOGIC - Generate complete time series with missed pings
+        $rttData = [];
+        $uptimeData = [];
+        $labels = [];
+        $rttDataWithNulls = [];
+        $uptimeDataWithNulls = [];
 
-            foreach ($recentHeartbeats as $heartbeat) {
-                $label = $heartbeat->created_at->format('H:i');
-                if (!in_array($label, $labels)) {
-                    $labels[] = $label;
-                    $rttData[] = round($heartbeat->rtt_ms);
-                    $uptimeData[] = 100; // Heartbeat received = 100% uptime
+        // Get time range based on actual heartbeat data
+        $latestHeartbeat = $recentHeartbeats->first()->created_at;
+        $now = $latestHeartbeat->copy()->addMinutes(5); // Start from just after the latest heartbeat
+        $startTime = $now->copy()->subHours(4);
+        $endTime = $now->copy();
+
+        // Create a map of existing heartbeats by timestamp
+        $heartbeatMap = [];
+        foreach ($recentHeartbeats as $heartbeat) {
+            $timestamp = $heartbeat->created_at->timestamp;
+            $heartbeatMap[$timestamp] = $heartbeat;
+        }
+
+        // Generate complete time series in 5-minute intervals
+        $currentTime = $startTime->copy();
+        $hasData = false;
+
+        while ($currentTime <= $endTime) {
+            // Format time in local timezone (Africa/Johannesburg - UTC+2)
+            $localTime = $currentTime->copy()->setTimezone('Africa/Johannesburg');
+            $label = $localTime->format('H:i');
+
+            // Check if ANY heartbeat exists within this 5-minute interval
+            $heartbeatFound = false;
+            $heartbeat = null;
+
+            // Look for heartbeats that fall within this 5-minute window
+            foreach ($recentHeartbeats as $hb) {
+                $hbTime = $hb->created_at;
+                if ($hbTime >= $currentTime && $hbTime < $currentTime->copy()->addMinutes(5)) {
+                    $heartbeatFound = true;
+                    $heartbeat = $hb;
+                    break;
                 }
             }
 
-            // Calculate expected heartbeats based on time range
-            $timeRangeMinutes = max(1, $recentHeartbeats->first()->created_at->diffInMinutes($recentHeartbeats->last()));
-            $expectedHeartbeats = ceil($timeRangeMinutes / 5); // 5 minute intervals
-            $actualHeartbeats = count($rttData);
+            if ($heartbeatFound && $heartbeat) {
+                // Heartbeat exists in this interval
+                $rttData[] = round($heartbeat->rtt_ms);
+                $uptimeData[] = 100; // 100% uptime
+                $rttDataWithNulls[] = round($heartbeat->rtt_ms);
+                $uptimeDataWithNulls[] = 100;
+                $hasData = true;
+            } else {
+                // No heartbeat in this interval
+                $rttData[] = null; // null for missed ping
+                $uptimeData[] = 0; // 0% uptime
+                $rttDataWithNulls[] = null;
+                $uptimeDataWithNulls[] = 0;
+            }
 
-            $chartData = [
-                'rtt_labels' => $labels,
-                'rtt_data' => $rttData,
-                'uptime_labels' => $labels,
-                'uptime_data' => $uptimeData,
-                'overall_uptime' => $expectedHeartbeats > 0 ? round(($actualHeartbeats / $expectedHeartbeats) * 100, 1) : 0
-            ];
+            $labels[] = $label;
+            $currentTime->addMinutes(5);
+        }
+
+        // Calculate overall uptime using the improved method from Client model
+        $overallUptime = $client->uptime_percentage;
+
+        $chartData = [
+            'rtt_labels' => $labels,
+            'rtt_data' => $rttData,
+            'rtt_data_with_nulls' => $rttDataWithNulls,
+            'uptime_labels' => $labels,
+            'uptime_data' => $uptimeData,
+            'uptime_data_with_nulls' => $uptimeDataWithNulls,
+            'overall_uptime' => $overallUptime,
+            'has_missed_pings' => in_array(0, $uptimeData, true)
+        ];
         }
 
         return view('dashboard.client', compact('client', 'chartData'));

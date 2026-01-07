@@ -30,9 +30,20 @@ class Client extends Model
 
     public function getStatusAttribute(): string
     {
-        if (!$this->is_online) return 'OFFLINE';
         if (!$this->last_heartbeat) return 'PENDING';
-        return now()->diffInMinutes($this->last_heartbeat) > 10 ? 'STALE' : 'ONLINE';
+        if ($this->last_heartbeat->diffInMinutes(now()) > 5) {
+            // Update is_online status if it's still true but should be false
+            if ($this->is_online) {
+                $this->update(['is_online' => false]);
+            }
+            return 'OFFLINE';
+        }
+
+        // Update is_online status if it's false but should be true
+        if (!$this->is_online) {
+            $this->update(['is_online' => true]);
+        }
+        return 'ONLINE';
     }
 
     public function getAverageRtt1hAttribute(): ?float
@@ -51,10 +62,46 @@ class Client extends Model
 
     public function getUptimePercentageAttribute(): float
     {
-        $expected = 288; // 12 heartbeats/hour * 24 hours
-        $actual = $this->heartbeats()
+        $heartbeats = $this->heartbeats()
             ->where('created_at', '>=', now()->subDay())
-            ->count();
-        return ($actual / $expected) * 100;
+            ->orderBy('created_at')
+            ->get();
+
+        if ($heartbeats->isEmpty()) {
+            return 0.0;
+        }
+
+        // Simple and reliable approach: count missed heartbeats
+        $totalHeartbeats = $heartbeats->count();
+        $missedHeartbeats = 0;
+
+        $previousHeartbeat = $heartbeats->first()->created_at;
+
+        foreach ($heartbeats as $index => $heartbeat) {
+            // Skip the first heartbeat
+            if ($index === 0) continue;
+
+            $currentTime = $heartbeat->created_at;
+            $gapMinutes = $previousHeartbeat->diffInMinutes($currentTime);
+
+            // If gap > 5 minutes, count missed heartbeats
+            if ($gapMinutes > 5) {
+                $missedHeartbeats += floor(($gapMinutes - 5) / 5);
+            }
+
+            $previousHeartbeat = $currentTime;
+        }
+
+        // Calculate expected total heartbeats (actual + missed)
+        $expectedHeartbeats = $totalHeartbeats + $missedHeartbeats;
+
+        // Calculate uptime percentage
+        if ($expectedHeartbeats <= 0) {
+            return 100.0;
+        }
+
+        $uptimePercentage = ($totalHeartbeats / $expectedHeartbeats) * 100;
+
+        return round(max(0, min(100, $uptimePercentage)), 1);
     }
 }

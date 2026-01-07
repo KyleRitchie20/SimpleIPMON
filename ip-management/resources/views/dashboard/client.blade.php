@@ -164,8 +164,11 @@ let uptimeChart = null;
 const chartData = @json($chartData ?? []);
 const rttLabels = chartData.rtt_labels || [];
 const rttData = chartData.rtt_data || [];
+const rttDataWithNulls = chartData.rtt_data_with_nulls || [];
 const uptimeLabels = chartData.uptime_labels || [];
 const uptimeData = chartData.uptime_data || [];
+const uptimeDataWithNulls = chartData.uptime_data_with_nulls || [];
+const hasMissedPings = chartData.has_missed_pings || false;
 
 function destroyCharts() {
     [rttChart, uptimeChart].forEach(chart => {
@@ -179,90 +182,199 @@ function destroyCharts() {
 
 function createCharts() {
     destroyCharts();
-    
-    // RTT CHART
+
+    // RTT CHART - Show missed pings as red dots
     const ctxRTT = document.getElementById('rttChart');
     if (ctxRTT) {
         ctxRTT.style.height = '300px';
+
+        // Separate successful and missed pings for better visualization
+        const successfulRttData = rttDataWithNulls.map((value, index) =>
+            value !== null ? value : null
+        );
+
+        const missedRttData = rttDataWithNulls.map((value, index) =>
+            value === null ? 0 : null
+        );
+
         rttChart = new Chart(ctxRTT, {
             type: 'line',
             data: {
                 labels: rttLabels,
-                datasets: [{
-                    label: 'Ping RTT (ms)',
-                    data: rttData,
-                    borderColor: '#3b82f6',
-                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    tension: 0.4,
-                    fill: true,
-                    pointRadius: 5,
-                    pointHoverRadius: 7,
-                    borderWidth: 3
-                }]
+                datasets: [
+                    {
+                        label: 'Successful Pings',
+                        data: successfulRttData,
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        tension: 0.4,
+                        fill: true,
+                        pointRadius: 5,
+                        pointHoverRadius: 7,
+                        borderWidth: 3
+                    },
+                    {
+                        label: 'Missed Pings',
+                        data: missedRttData,
+                        borderColor: '#ef4444',
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        tension: 0,
+                        fill: false,
+                        pointRadius: 6,
+                        pointHoverRadius: 8,
+                        borderWidth: 0,
+                        pointStyle: 'triangle',
+                        pointBackgroundColor: '#ef4444'
+                    }
+                ]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 scales: {
-                    y: { 
-                        beginAtZero: true, 
+                    y: {
+                        beginAtZero: true,
                         max: 200,
                         title: { display: true, text: 'Latency (ms)' }
                     }
                 },
                 plugins: {
-                    legend: { display: false },
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            usePointStyle: true,
+                            padding: 15,
+                            font: { size: 12 }
+                        }
+                    },
                     title: {
                         display: rttData.length === 0,
                         text: 'No ping data yet',
                         font: { size: 16 }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                if (context.datasetIndex === 1) {
+                                    return 'Missed Ping';
+                                }
+                                return 'RTT: ' + context.parsed.y + 'ms';
+                            }
+                        }
                     }
                 }
             }
         });
     }
-    
-    // UPTIME CHART
+
+    // UPTIME CHART - Show 0% for missed pings
     const ctxUptime = document.getElementById('uptimeChart');
     if (ctxUptime) {
         ctxUptime.style.height = '300px';
+
+        // Separate successful and missed pings for uptime chart
+        const successfulUptimeData = uptimeDataWithNulls.map((value, index) =>
+            value === 100 ? value : null
+        );
+
+        const missedUptimeData = uptimeDataWithNulls.map((value, index) =>
+            value === 0 ? value : null
+        );
+
         uptimeChart = new Chart(ctxUptime, {
             type: 'line',
             data: {
                 labels: uptimeLabels,
-                datasets: [{
-                    label: 'Uptime (%)',
-                    data: uptimeData,
-                    borderColor: '#10b981',
-                    backgroundColor: 'rgba(16, 185, 129, 0.2)',
-                    tension: 0.4,
-                    fill: true,
-                    pointRadius: 5,
-                    pointHoverRadius: 7,
-                    borderWidth: 3
-                }]
+                datasets: [
+                    {
+                        label: 'Online',
+                        data: successfulUptimeData,
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                        tension: 0.4,
+                        fill: true,
+                        pointRadius: 5,
+                        pointHoverRadius: 7,
+                        borderWidth: 3
+                    },
+                    {
+                        label: 'Offline',
+                        data: missedUptimeData,
+                        borderColor: '#ef4444',
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        tension: 0,
+                        fill: false,
+                        pointRadius: 6,
+                        pointHoverRadius: 8,
+                        borderWidth: 0,
+                        pointStyle: 'triangle',
+                        pointBackgroundColor: '#ef4444'
+                    }
+                ]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 scales: {
-                    y: { 
-                        min: 0, 
+                    y: {
+                        min: 0,
                         max: 100,
                         ticks: { callback: v => v + '%' },
                         title: { display: true, text: 'Uptime (%)' }
                     }
                 },
                 plugins: {
-                    legend: { display: false },
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            usePointStyle: true,
+                            padding: 15,
+                            font: { size: 12 }
+                        }
+                    },
                     title: {
                         display: uptimeData.length === 0,
                         text: 'No uptime data yet',
                         font: { size: 16 }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                if (context.datasetIndex === 1) {
+                                    return 'Offline - Missed Ping';
+                                }
+                                return 'Online - ' + context.parsed.y + '%';
+                            }
+                        }
                     }
                 }
             }
         });
+    }
+
+    // Add warning banner if there are missed pings
+    if (hasMissedPings) {
+        const warningBanner = document.createElement('div');
+        warningBanner.style.backgroundColor = '#fef2f2';
+        warningBanner.style.border = '1px solid #fecaca';
+        warningBanner.style.borderRadius = '8px';
+        warningBanner.style.padding = '1rem';
+        warningBanner.style.marginTop = '1rem';
+        warningBanner.style.display = 'flex';
+        warningBanner.style.alignItems = 'center';
+        warningBanner.style.gap = '0.75rem';
+        warningBanner.innerHTML = `
+            <div style="background: #ef4444; color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-weight: 600; font-size: 0.75rem;">⚠️ WARNING</div>
+            <div style="color: #dc2626; font-weight: 500;">Missed pings detected! Red markers indicate periods where the client failed to send heartbeats.</div>
+        `;
+
+        // Insert warning banner before the charts section
+        const chartsSection = document.querySelector('div[style*="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem;"]');
+        if (chartsSection) {
+            chartsSection.parentNode.insertBefore(warningBanner, chartsSection);
+        }
     }
 }
 
