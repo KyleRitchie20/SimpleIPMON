@@ -65,7 +65,7 @@
 </div>
 
 <!-- Add Client Modal -->
-<div id="add-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 2rem;">
+<div id="add-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; padding: 2rem;">
     <div style="background: white; padding: 2.5rem; border-radius: 16px; max-width: 450px; width: 100%; box-shadow: 0 25px 50px rgba(0,0,0,0.25);">
         <h2 style="font-size: 1.75rem; font-weight: 700; color: #1f2937; margin: 0 0 1rem 0; text-align: center;">Register New Client</h2>
         <form id="add-client-form">

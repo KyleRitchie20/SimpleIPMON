@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class ClientHeartbeat extends Model
 {
+    use HasFactory;
     public $timestamps = false;
     protected $fillable = ['client_id', 'ip_address', 'rtt_ms', 'status_code'];
     protected $casts = ['created_at' => 'datetime'];
